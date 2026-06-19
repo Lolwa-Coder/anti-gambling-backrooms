@@ -68,6 +68,24 @@
   .pl.turn { background: rgba(224,169,61,0.16); border-radius: 8px; margin: 0 -6px; padding: 4px 6px; }
   .pl.turn .nm { font-weight: 600; }
 
+  #pip {
+    position: fixed; top: 14px; right: 14px; z-index: 10; width: 210px; height: 210px;
+    border: 1px solid var(--line); border-radius: 12px; overflow: hidden; display: none;
+    background: #0d0f15; box-shadow: 0 10px 30px rgba(0,0,0,0.45);
+  }
+  #pip canvas { display: block; }
+  #pip .piplabel {
+    position: absolute; top: 6px; left: 9px; z-index: 1; pointer-events: none;
+    font-size: 0.62rem; letter-spacing: 1.5px; color: var(--muted);
+  }
+  /* center reticle to show the drop point */
+  #pip::before, #pip::after {
+    content: ""; position: absolute; left: 50%; top: 50%; background: rgba(224,169,61,0.55);
+    pointer-events: none; z-index: 1;
+  }
+  #pip::before { width: 1px; height: 22px; transform: translate(-50%,-50%); }
+  #pip::after  { height: 1px; width: 22px; transform: translate(-50%,-50%); }
+
   #banner {
     position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 10;
     background: var(--panel); border: 1px solid var(--line); border-radius: 999px;
@@ -110,6 +128,7 @@
     <div class="row"><input id="nameInput" placeholder="Your name" maxlength="14" /></div>
 
     <button id="hostBtn" style="width:100%">Host a new game</button>
+    <button id="soloBtn" class="ghost" style="width:100%; margin-top:10px">Practice solo</button>
 
     <div class="share" id="shareBox">
       <label>Share this link with friends:</label>
@@ -134,6 +153,7 @@
 
 <!-- HUD -->
 <div id="hud"><div id="scoreboard"><h3>Players</h3><div id="players"></div></div></div>
+<div id="pip"><div class="piplabel">TOP VIEW</div></div>
 <div id="banner"></div>
 <div id="toast"></div>
 <div id="help"></div>
@@ -171,9 +191,12 @@ import * as CANNON from 'cannon-es';
 
 // ---- Tower geometry constants ----
 const L = 1.5, W = 0.5, H = 0.32;       // block length / width / height
-const GAP = 0.012;                       // tiny gap between siblings
+const GAP = 0.03;                        // air slot between siblings in a layer
 const LAYERS = 18, PER_LAYER = 3;
 const N = LAYERS * PER_LAYER;            // 54 blocks
+// collision groups: the block being pulled drops out of the BLOCK group so it
+// can never push its neighbors — sliding it only removes its support.
+const G_GROUND = 1, G_BLOCK = 2;
 const COLORS = ['#e0533d','#3da0e0','#5fd06a','#e0c93d','#b46be0','#e07fb0','#4dd6c4','#f08a3c'];
 
 // ---- Shared render buffer: positions[i]=[x,y,z], quats[i]=[x,y,z,w] ----
@@ -206,8 +229,9 @@ buildMeta();
 //  RENDERING (runs on everyone)
 // =====================================================================
 let renderer, scene, camera, controls, raycaster, pointer = new THREE.Vector2();
+let pipRenderer, pipCam, pipEl;        // top-down placement view
 const meshes = [];
-let hoverMesh = null;
+let hoverMesh = null, placeGlow = null;
 
 function initThree(){
   renderer = new THREE.WebGLRenderer({ antialias:true });
@@ -248,8 +272,9 @@ function initThree(){
   table.position.y = -0.3; table.receiveShadow = true;
   scene.add(table);
 
-  // blocks
-  const geo = new THREE.BoxGeometry(L, H, W);
+  // blocks — rendered slightly smaller than their physics cell so there's
+  // visible air between every block while the simulation stays solid.
+  const geo = new THREE.BoxGeometry(L*0.97, H*0.86, W*0.9);
   for(let i=0;i<N;i++){
     const hue = 38 + (i%5)*3;
     const mat = new THREE.MeshStandardMaterial({
@@ -262,6 +287,17 @@ function initThree(){
     scene.add(m);
     meshes.push(m);
   }
+
+  // top-down picture-in-picture for accurate placement
+  pipEl = document.getElementById('pip');
+  pipRenderer = new THREE.WebGLRenderer({ antialias:true });
+  pipRenderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  pipRenderer.setSize(210, 210);
+  pipRenderer.shadowMap.enabled = false;
+  pipEl.appendChild(pipRenderer.domElement);
+  const s = 1.55;
+  pipCam = new THREE.OrthographicCamera(-s, s, s, -s, 0.1, 90);
+  pipCam.up.set(0, 0, -1);   // world +X = screen right, -Z = screen up
 
   raycaster = new THREE.Raycaster();
   addEventListener('resize', onResize);
@@ -287,6 +323,22 @@ function animate(){
   }
   updateHover();
   renderer.render(scene, camera);
+
+  // highlight the block being carried so it's obvious from the top view
+  if(placeGlow && !(G.phase==='placing' && placeGlow.userData.index===G.active)){
+    placeGlow.material.emissive.setHex(0x000000); placeGlow = null;
+  }
+  // top-down placement view: only while placing
+  if(G.phase === 'placing' && G.active >= 0){
+    if(pipEl.style.display !== 'block') pipEl.style.display = 'block';
+    placeGlow = meshes[G.active];
+    placeGlow.material.emissive.setHex(0x4a6300);
+    pipCam.position.set(0, G.topY + 14, 0);
+    pipCam.lookAt(0, G.topY, 0);
+    pipRenderer.render(scene, pipCam);
+  } else if(pipEl.style.display !== 'none'){
+    pipEl.style.display = 'none';
+  }
 }
 
 // =====================================================================
@@ -372,24 +424,42 @@ const G = {
 //  PHYSICS (host only)
 // =====================================================================
 let world = null, bodies = [], origY = [];
+let woodMat = null;
 let dropTimer = 0, pullTarget = 0, collapseTime = 0;
-const STIFF = 5.5, MAXSPEED = 3.2, CLEAR = L*0.72;
+const CLEAR = L*0.72;
+
+// the resting orientation for a block in a given layer
+function setBaseQuat(b, axis){
+  if(axis === 'x') b.quaternion.set(0,0,0,1);
+  else b.quaternion.setFromEuler(0, Math.PI/2, 0);
+}
+// fully solid block that collides with the tower again
+function makeSolid(i){
+  bodies[i].collisionFilterMask = G_GROUND | G_BLOCK;
+}
+// ghost block: tracked by the mouse, collides with nothing, pushes no one
+function makeGhost(i){
+  bodies[i].collisionFilterMask = 0;
+}
 
 function initPhysics(){
   world = new CANNON.World({ gravity: new CANNON.Vec3(0, -9.82, 0) });
-  world.solver.iterations = 24;
+  world.solver.iterations = 45;
+  world.solver.tolerance = 0.001;
   world.allowSleep = true;
   world.broadphase = new CANNON.SAPBroadphase(world);
   const mat = new CANNON.Material('wood');
+  woodMat = mat;
   world.addContactMaterial(new CANNON.ContactMaterial(mat, mat, {
-    friction: 0.72, restitution: 0.0,
+    friction: 0.62, restitution: 0.0,
     contactEquationStiffness: 1e8, contactEquationRelaxation: 3,
     frictionEquationStiffness: 1e8,
   }));
 
   // ground
   const ground = new CANNON.Body({ mass:0, material:mat,
-    shape:new CANNON.Plane() });
+    shape:new CANNON.Plane(),
+    collisionFilterGroup: G_GROUND, collisionFilterMask: G_BLOCK });
   ground.quaternion.setFromEuler(-Math.PI/2, 0, 0);
   world.addBody(ground);
 
@@ -400,9 +470,10 @@ function initPhysics(){
   for(let i=0;i<N;i++){
     const m = META[i];
     const alongX = m.axis === 'x';
-    const body = new CANNON.Body({ mass:1, material:mat, shape:new CANNON.Box(half),
-      allowSleep:true, sleepSpeedLimit:0.15, sleepTimeLimit:0.3,
-      linearDamping:0.35, angularDamping:0.4 });
+    const body = new CANNON.Body({ mass:6, material:mat, shape:new CANNON.Box(half),
+      allowSleep:true, sleepSpeedLimit:0.22, sleepTimeLimit:0.2,
+      linearDamping:0.5, angularDamping:0.6,
+      collisionFilterGroup: G_BLOCK, collisionFilterMask: G_GROUND | G_BLOCK });
     if(!alongX) body.quaternion.setFromEuler(0, Math.PI/2, 0);
     const x = alongX ? m.along0 : m.perp;
     const z = alongX ? m.perp   : m.along0;
@@ -425,20 +496,23 @@ function syncRenderFromBodies(){
 
 function hostStep(dt){
   if(!world) return;
-  // guide the actively pulled block along its slide axis
+  // The pulled block is kinematic + collision-free: it tracks the mouse only
+  // along its own axis, pinned to its lane and height, so it can never shove a
+  // neighbor. Sliding it out simply removes the support it was giving.
   if(G.phase === 'pulling' && G.active >= 0){
-    const b = bodies[G.active], m = META[G.active];
-    b.wakeUp();
-    const cur = m.axis === 'x' ? b.position.x : b.position.z;
-    let v = (pullTarget - cur) * STIFF;
-    v = clamp(v, -MAXSPEED, MAXSPEED);
-    if(m.axis === 'x') b.velocity.x = v; else b.velocity.z = v;
-    if(Math.abs(cur) > CLEAR) beginPlace();     // block has cleared the tower
+    const b = bodies[G.active], i = G.active, m = META[i];
+    const along = clamp(pullTarget, -L*1.5, L*1.5);
+    const lane = m.perp, y = origY[i];
+    if(m.axis === 'x') b.position.set(along, y, lane);
+    else               b.position.set(lane, y, along);
+    b.velocity.setZero(); b.angularVelocity.setZero();
+    if(Math.abs(along) > CLEAR) beginPlace();     // block has cleared the tower
   }
   // carried block follows placement target (kinematic)
   if(G.phase === 'placing' && G.active >= 0){
     const b = bodies[G.active];
     b.position.lerp(carryTarget, 0.4, b.position);
+    b.velocity.setZero(); b.angularVelocity.setZero();
   }
 
   world.step(1/60, dt, 4);
@@ -464,16 +538,13 @@ const carryTarget = new CANNON.Vec3();
 function beginPlace(){
   G.phase = 'placing';
   const b = bodies[G.active];
-  b.type = CANNON.Body.KINEMATIC;
-  b.velocity.setZero(); b.angularVelocity.setZero();
+  b.velocity.setZero(); b.angularVelocity.setZero();   // already kinematic + ghost
   // recompute current top of tower for placement height
   let top = 0; for(let i=0;i<N;i++) if(i!==G.active) top = Math.max(top, bodies[i].position.y);
   G.topY = top + H/2;
   carryTarget.set(0, G.topY + H*0.6, 0);
   b.position.copy(carryTarget);
-  // keep the block upright while carried, aligned to its layer's orientation
-  if(META[G.active].axis === 'x') b.quaternion.set(0,0,0,1);
-  else b.quaternion.setFromEuler(0, Math.PI/2, 0);
+  setBaseQuat(b, META[G.active].axis);   // upright, aligned to its layer
   broadcastMeta();
 }
 
@@ -513,16 +584,31 @@ function hostHandleIntent(msg, fromId){
   switch(msg.t){
     case 'select':
       if(G.phase==='idle' && msg.i>=0 && msg.i<N){
-        G.phase='pulling'; G.active=msg.i;
-        pullTarget = META[msg.i].axis==='x' ? bodies[msg.i].position.x : bodies[msg.i].position.z;
+        const i = msg.i, b = bodies[i], m = META[i];
+        G.phase='pulling'; G.active=i;
+        b.type = CANNON.Body.KINEMATIC;       // mouse-controlled, not physics-pushed
+        b.velocity.setZero(); b.angularVelocity.setZero();
+        setBaseQuat(b, m.axis);
+        makeGhost(i);                          // collides with nothing while pulled
+        for(const o of bodies) o.wakeUp();     // so blocks react to the lost support
+        pullTarget = m.axis==='x' ? b.position.x : b.position.z;
         broadcastMeta();
       }
       break;
     case 'pull':
-      if(G.phase==='pulling' && msg.i===G.active) pullTarget = clamp(msg.along, -L*1.4, L*1.4);
+      if(G.phase==='pulling' && msg.i===G.active) pullTarget = clamp(msg.along, -L*1.5, L*1.5);
       break;
     case 'release':
-      if(G.phase==='pulling'){ G.phase='idle'; G.active=-1; bodies && broadcastMeta(); }
+      if(G.phase==='pulling'){
+        // put the block back exactly where it came from and re-solidify
+        const i = G.active, b = bodies[i], m = META[i];
+        const x = m.axis==='x' ? 0 : m.perp, z = m.axis==='x' ? m.perp : 0;
+        b.position.set(x, origY[i], z);
+        setBaseQuat(b, m.axis);
+        b.velocity.setZero(); b.angularVelocity.setZero();
+        b.type = CANNON.Body.DYNAMIC; makeSolid(i); b.wakeUp();
+        G.phase='idle'; G.active=-1; broadcastMeta();
+      }
       break;
     case 'place':
       if(G.phase==='placing') carryTarget.set(msg.x, G.topY + H*0.6, msg.z);
@@ -530,6 +616,7 @@ function hostHandleIntent(msg, fromId){
     case 'drop':
       if(G.phase==='placing'){
         const b = bodies[G.active];
+        makeSolid(G.active);                   // collides with the tower again
         b.type = CANNON.Body.DYNAMIC; b.wakeUp();
         b.velocity.setZero(); b.angularVelocity.setZero();
         G.phase = 'settling'; dropTimer = 1.6;
@@ -778,6 +865,17 @@ el('hostBtn').onclick = async ()=>{
 };
 
 el('startBtn').onclick = ()=> hostStartGame();
+
+el('soloBtn').onclick = ()=>{
+  // local practice: no networking, always your turn
+  net.isHost = true; net.id = 'solo';
+  G.players = [{ id:'solo', name: getName(), color: COLORS[0], score: 0 }];
+  G.started = true; G.over = false; G.loser = null; G.turn = 0; G.phase = 'idle';
+  initPhysics();
+  startStateLoop();
+  enterGame();
+  updateUI();
+};
 
 el('joinBtn').onclick = async ()=>{
   const id = el('joinId').value.trim();
