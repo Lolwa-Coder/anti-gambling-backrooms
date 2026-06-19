@@ -4,9 +4,10 @@ An **anti-gambling** web experience. Three gambling machines — slots, roulette
 
 **▶ Live demo: https://lolwa-coder.github.io/anti-gambling-backrooms/**
 
-## Two versions
+## Three versions
 - **3D Backrooms** (`index.html`) — a first-person liminal yellow room rendered in [Three.js](https://threejs.org/). Walk up to glossy, rounded consoles and play. The lights bleed red as your balance drains, manipulative "reasons to gamble" are scrawled across the walls in blood, and a grim reaper greets you at $0.
 - **Classic 2D** (`classic.html`) — the original single-page version with the same three machines and an honest ledger.
+- **Gambler's Ruin Simulator** (`ruin.html`) — the *math* behind the feeling. Set a bankroll, bet size, house edge, payout, and number of rounds, then watch **300 simulated players** gamble at once. Win probability is derived so the expected return is exactly `1 − edge`, and the chart shows every bankroll over time — a green plume of the lucky few and a red sediment of the ruined. Presets for roulette, slots, a long shot, and a *genuinely fair coin* (0% edge — which still busts people, because $0 is a wall you can't bet your way back from). Pure HTML/canvas, no dependencies.
 
 ## The point
 Every machine is mathematically honest about how it's rigged:
