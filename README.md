@@ -28,3 +28,14 @@ This is not a game in real life. Help is free, confidential, and available 24/7:
 
 ## Tech
 Plain HTML/CSS/JS. The 3D version loads Three.js and the *Pirata One* font from CDNs (needs an internet connection). No build step — open `index.html` or visit the live demo.
+
+---
+
+## Bonus: ZENGA — multiplayer tower game (`zenga.html`)
+A 3D, physics-based Jenga you play with friends — **no server needed**. One player hosts and runs the authoritative physics simulation; everyone else connects directly over WebRTC and renders the broadcast state.
+
+- **Host** a game, then share the generated link (or host code) with friends.
+- **Join** by pasting the host code, or open a `?host=…` link to auto-fill it.
+- Take turns: drag a block to slide it out, move it on top, and click to drop. Topple the tower and the round is yours to lose.
+
+Tech: [Three.js](https://threejs.org/) (rendering) · [cannon-es](https://github.com/pmndrs/cannon-es) (physics) · [PeerJS](https://peerjs.com/) (peer-to-peer WebRTC). All from CDNs, fully static — works on GitHub Pages.
