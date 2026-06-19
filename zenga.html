@@ -191,7 +191,7 @@ import * as CANNON from 'cannon-es';
 
 // ---- Tower geometry constants ----
 const L = 1.5, W = 0.5, H = 0.32;       // block length / width / height
-const GAP = 0.016;                       // air slot between siblings in a layer
+const GAP = 0.004;                       // blocks sit flush for a tight, stable stack
 const LAYERS = 18, PER_LAYER = 3;
 const N = LAYERS * PER_LAYER;            // 54 blocks
 // collision groups: the block being pulled drops out of the BLOCK group so it
@@ -246,7 +246,7 @@ function initThree(){
   scene.fog = new THREE.Fog('#15171f', 18, 38);
 
   camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 100);
-  camera.position.set(7, 6.5, 9);
+  camera.position.set(7, 11, 9);
 
   controls = new OrbitControls(camera, renderer.domElement);
   controls.target.set(0, 3, 0);
@@ -275,9 +275,8 @@ function initThree(){
   table.position.y = -0.3; table.receiveShadow = true;
   scene.add(table);
 
-  // blocks — rendered slightly smaller than their physics cell so there's
-  // visible air between every block while the simulation stays solid.
-  const geo = new THREE.BoxGeometry(L*0.99, H*0.94, W*0.96);
+  // blocks — full size (only a hair under to avoid z-fighting on shared faces)
+  const geo = new THREE.BoxGeometry(L*0.998, H*0.99, W*0.997);
   for(let i=0;i<N;i++){
     const hue = 38 + (i%5)*3;
     const mat = new THREE.MeshStandardMaterial({
@@ -380,7 +379,7 @@ function onPointerMove(e){
       send({ t:'pull', i:G.active, along });
     }
   } else if(G.phase === 'placing' && G.active >= 0){
-    const topY = G.topY + H*0.6;
+    const topY = G.topY + CARRY_Y_OFF;
     dragPlane.set(new THREE.Vector3(0,1,0), -topY);
     if(raycaster.ray.intersectPlane(dragPlane, planePoint)){
       send({ t:'place', x: clamp(planePoint.x,-1.2,1.2), z: clamp(planePoint.z,-1.2,1.2) });
@@ -430,6 +429,11 @@ let world = null, bodies = [], origY = [];
 let woodMat = null;
 let dropTimer = 0, pullTarget = 0, collapseTime = 0;
 const CLEAR = L*0.72;
+const CARRY_Y_OFF = H*0.5 + 0.004;  // sits right on the surface — placed, not dropped
+// placed blocks build clean layers on top: alternating orientation, 3 slots each
+let topLayer = LAYERS, layerSlots = [false,false,false], placeSlot = 1, layerY = 0;
+function layerAxis(Li){ return Li % 2 === 0 ? 'x' : 'z'; }
+function slotOffset(s){ return (s-1) * (W + GAP); }
 
 // the resting orientation for a block in a given layer
 function setBaseQuat(b, axis){
@@ -447,17 +451,18 @@ function makeGhost(i){
 
 function initPhysics(){
   world = new CANNON.World({ gravity: new CANNON.Vec3(0, -9.82, 0) });
-  world.solver.iterations = 45;
-  world.solver.tolerance = 0.001;
+  world.solver.iterations = 60;
+  world.solver.tolerance = 0.0005;
   world.allowSleep = true;
   world.broadphase = new CANNON.SAPBroadphase(world);
   const mat = new CANNON.Material('wood');
   woodMat = mat;
   world.addContactMaterial(new CANNON.ContactMaterial(mat, mat, {
-    friction: 0.62, restitution: 0.0,
-    // stiffer, less-relaxed contacts -> firm blocks instead of spongy ones
-    contactEquationStiffness: 6e8, contactEquationRelaxation: 2,
-    frictionEquationStiffness: 6e8, frictionEquationRelaxation: 2,
+    friction: 0.85, restitution: 0.0,
+    // firm but damped: stiff enough to not feel spongy, relaxed enough that
+    // landings settle instead of bouncing/wobbling
+    contactEquationStiffness: 3e8, contactEquationRelaxation: 3,
+    frictionEquationStiffness: 3e8, frictionEquationRelaxation: 3,
   }));
 
   // ground
@@ -468,6 +473,7 @@ function initPhysics(){
   world.addBody(ground);
 
   bodies = []; origY = []; collapseTime = 0;
+  topLayer = LAYERS; layerSlots = [false,false,false]; placeSlot = 1; layerY = 0;
   // single box shape (long axis on X, matching the render geometry);
   // odd layers are rotated 90° about Y so their long axis runs along Z.
   const half = new CANNON.Vec3(L/2, H/2, W/2);
@@ -476,7 +482,7 @@ function initPhysics(){
     const alongX = m.axis === 'x';
     const body = new CANNON.Body({ mass:6, material:mat, shape:new CANNON.Box(half),
       allowSleep:true, sleepSpeedLimit:0.22, sleepTimeLimit:0.2,
-      linearDamping:0.5, angularDamping:0.6,
+      linearDamping:0.55, angularDamping:0.72,
       collisionFilterGroup: G_BLOCK, collisionFilterMask: G_GROUND | G_BLOCK });
     if(!alongX) body.quaternion.setFromEuler(0, Math.PI/2, 0);
     const x = alongX ? m.along0 : m.perp;
@@ -543,12 +549,19 @@ function beginPlace(){
   G.phase = 'placing';
   const b = bodies[G.active];
   b.velocity.setZero(); b.angularVelocity.setZero();   // already kinematic + ghost
-  // recompute current top of tower for placement height
-  let top = 0; for(let i=0;i<N;i++) if(i!==G.active) top = Math.max(top, bodies[i].position.y);
-  G.topY = top + H/2;
-  carryTarget.set(0, G.topY + H*0.6, 0);
+  const ax = layerAxis(topLayer);
+  // when starting a fresh layer, lock its height to rest on the current top;
+  // every block in the layer then shares that same height
+  if(layerSlots.every(f => !f)){
+    let top = 0; for(let i=0;i<N;i++) if(i!==G.active) top = Math.max(top, bodies[i].position.y);
+    layerY = top + H;
+  }
+  G.topY = layerY - H/2;
+  setBaseQuat(b, ax);
+  placeSlot = layerSlots.findIndex(f => !f); if(placeSlot < 0) placeSlot = 1;
+  const off = slotOffset(placeSlot);
+  carryTarget.set(ax==='x' ? 0 : off, layerY + 0.004, ax==='x' ? off : 0);
   b.position.copy(carryTarget);
-  setBaseQuat(b, META[G.active].axis);   // upright, aligned to its layer
   broadcastMeta();
 }
 
@@ -615,14 +628,31 @@ function hostHandleIntent(msg, fromId){
       }
       break;
     case 'place':
-      if(G.phase==='placing') carryTarget.set(msg.x, G.topY + H*0.6, msg.z);
+      if(G.phase==='placing'){
+        // snap the mouse to the nearest still-free slot in the current layer
+        const ax = layerAxis(topLayer);
+        const coord = ax==='x' ? msg.z : msg.x;
+        let best=-1, bd=1e9;
+        for(let s=0;s<3;s++){ if(layerSlots[s]) continue; const d=Math.abs(coord-slotOffset(s)); if(d<bd){bd=d;best=s;} }
+        if(best>=0) placeSlot = best;
+        const off = slotOffset(placeSlot);
+        carryTarget.set(ax==='x' ? 0 : off, G.topY + CARRY_Y_OFF, ax==='x' ? off : 0);
+      }
       break;
     case 'drop':
       if(G.phase==='placing'){
         const b = bodies[G.active];
+        const ax = layerAxis(topLayer), off = slotOffset(placeSlot);
+        // snap exactly into the layer slot, flat, with zero motion — no wobble
+        b.position.set(ax==='x' ? 0 : off, G.topY + H/2, ax==='x' ? off : 0);
+        setBaseQuat(b, ax);
+        b.velocity.setZero(); b.angularVelocity.setZero();
         makeSolid(G.active);                   // collides with the tower again
         b.type = CANNON.Body.DYNAMIC; b.wakeUp();
         b.velocity.setZero(); b.angularVelocity.setZero();
+        // mark the slot filled; advance to a fresh layer once all three are in
+        layerSlots[placeSlot] = true;
+        if(layerSlots.every(f=>f)){ topLayer++; layerSlots = [false,false,false]; }
         G.phase = 'settling'; dropTimer = 1.6;
         broadcastMeta();
       }
