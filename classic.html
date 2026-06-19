@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>THE HOUSE ALWAYS WINS — An Anti-Gambling Experience</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="hum"></div>
+
+  <header class="hero">
+    <div class="flicker-light"></div>
+    <h1>THE HOUSE <span>ALWAYS</span> WINS</h1>
+    <p class="subtitle">You can't leave until you understand why.</p>
+    <div class="bank">
+      <span class="bank-label">YOUR BALANCE</span>
+      <span id="balance" class="bank-amount">$1,000</span>
+      <span class="bank-label">STARTED WITH $1,000</span>
+    </div>
+    <div id="net" class="net">Net: $0</div>
+  </header>
+
+  <main>
+    <!-- SLOT MACHINE -->
+    <section class="machine" id="slots-machine">
+      <h2>🎰 The Slot Machine</h2>
+      <p class="rtp">Advertised return: 95% &nbsp;·&nbsp; Real expected loss: 5% per spin</p>
+      <div class="reels">
+        <div class="reel" id="reel0">🍒</div>
+        <div class="reel" id="reel1">🔔</div>
+        <div class="reel" id="reel2">💎</div>
+      </div>
+      <div class="controls">
+        <button class="bet-btn" data-bet="10" data-game="slots">SPIN $10</button>
+        <button class="bet-btn" data-bet="50" data-game="slots">SPIN $50</button>
+      </div>
+      <p class="result" id="slots-result">Pull the lever. We dare you.</p>
+    </section>
+
+    <!-- ROULETTE -->
+    <section class="machine" id="roulette-machine">
+      <h2>🎡 Roulette</h2>
+      <p class="rtp">Bet on RED. 50/50, right? There's a green zero. There's always a green zero.</p>
+      <div class="wheel-wrap">
+        <div class="wheel" id="wheel"></div>
+        <div class="ball-pointer">▼</div>
+      </div>
+      <div class="controls">
+        <button class="bet-btn" data-bet="10" data-game="roulette" data-pick="red">RED $10</button>
+        <button class="bet-btn" data-bet="10" data-game="roulette" data-pick="black">BLACK $10</button>
+      </div>
+      <p class="result" id="roulette-result">The wheel doesn't care what you pick.</p>
+    </section>
+
+    <!-- DICE / CRASH -->
+    <section class="machine" id="dice-machine">
+      <h2>🎲 The Crash</h2>
+      <p class="rtp">Cash out before it crashes. The longer you wait, the more it pays — until it doesn't.</p>
+      <div class="crash-display" id="crash-multi">1.00x</div>
+      <div class="controls">
+        <button class="bet-btn" id="crash-start" data-bet="10" data-game="crash">BET $10 &amp; FLY</button>
+        <button class="bet-btn" id="crash-cashout" disabled>CASH OUT</button>
+      </div>
+      <p class="result" id="crash-result">It always crashes eventually.</p>
+    </section>
+  </main>
+
+  <section class="ledger">
+    <h2>The Ledger Doesn't Lie</h2>
+    <div class="stats">
+      <div class="stat"><span id="stat-spins">0</span><label>Bets Placed</label></div>
+      <div class="stat"><span id="stat-won">$0</span><label>Total Won</label></div>
+      <div class="stat"><span id="stat-lost">$0</span><label>Total Lost</label></div>
+      <div class="stat"><span id="stat-house">$0</span><label>House Profit</label></div>
+    </div>
+    <p class="ledger-note" id="ledger-note">Every machine here is mathematically honest. That's the point.</p>
+  </section>
+
+  <section class="reality" id="reality">
+    <h2>This Was Never a Game</h2>
+    <p>These machines are built with the real math. Slots, roulette, and "crash" games all carry a built-in <strong>house edge</strong> — a tax on hope. Play long enough and the outcome isn't luck. It's arithmetic.</p>
+    <p>If gambling has stopped being fun, you're not weak and you're not alone.</p>
+    <div class="help">
+      <strong>Need help? (US)</strong>
+      <p>Call or text <a href="tel:1-800-522-4700">1-800-522-4700</a> — National Problem Gambling Helpline, 24/7, free and confidential.</p>
+      <p>Chat: <a href="https://www.ncpgambling.org/chat" target="_blank" rel="noopener">ncpgambling.org/chat</a></p>
+    </div>
+  </section>
+
+  <footer>
+    <p>No real money. No real winnings. Just the truth, rendered in JavaScript.</p>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>

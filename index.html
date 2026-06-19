@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>THE HOUSE ALWAYS WINS — 3D Backrooms</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Pirata+One&display=swap" rel="stylesheet" />
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; background: #b8a82e; font-family: "Courier New", monospace; }
+  #app { position: fixed; inset: 0; }
+  canvas { display: block; }
+
+  /* crosshair */
+  #cross {
+    position: fixed; top: 50%; left: 50%; width: 14px; height: 14px;
+    transform: translate(-50%, -50%); pointer-events: none; z-index: 5;
+    mix-blend-mode: difference; display: none;
+  }
+  #cross::before, #cross::after {
+    content: ""; position: absolute; background: #fff;
+  }
+  #cross::before { left: 6px; top: 0; width: 2px; height: 14px; }
+  #cross::after { top: 6px; left: 0; height: 2px; width: 14px; }
+
+  /* HUD */
+  #hud {
+    position: fixed; top: 14px; left: 14px; z-index: 6; color: #1c1707;
+    background: linear-gradient(160deg, rgba(255,255,255,0.4), rgba(255,255,255,0.1));
+    border: 2px solid rgba(255,255,255,0.5); border-radius: 12px;
+    padding: 12px 16px; backdrop-filter: blur(3px); display: none;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.6), 0 8px 20px rgba(0,0,0,0.3);
+    min-width: 220px;
+  }
+  #hud .bal { font-size: 1.8rem; font-weight: bold; color: #0a6b32; }
+  #hud .bal.low { color: #9a1010; }
+  #hud .net { font-size: 0.85rem; margin: 2px 0 8px; }
+  #hud .led { font-size: 0.72rem; line-height: 1.5; border-top: 1px dashed #6a5e25; padding-top: 6px; }
+  #prompt {
+    position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%); z-index: 6;
+    background: rgba(0,0,0,0.78); color: #f2d35e; padding: 10px 20px; border-radius: 8px;
+    font-size: 0.95rem; display: none; pointer-events: none; letter-spacing: 1px;
+  }
+  #result {
+    position: fixed; bottom: 140px; left: 50%; transform: translateX(-50%); z-index: 6;
+    background: rgba(0,0,0,0.82); color: #fff; padding: 12px 22px; border-radius: 10px;
+    font-size: 1rem; max-width: 80%; text-align: center; display: none;
+    border: 2px solid #444; box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  }
+  #result.win { border-color: #1a7a43; }
+  #result.lose { border-color: #8a1f1f; }
+
+  /* contextual machine controls — large popup covering the machine */
+  #panel {
+    position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 6;
+    display: none; flex-direction: column; align-items: stretch; gap: 16px;
+    width: min(560px, 86vw); max-height: 80vh; padding: 28px 30px 30px;
+    background: linear-gradient(160deg, rgba(20,16,4,0.82), rgba(10,8,2,0.78));
+    border: 2px solid rgba(255,210,63,0.5); border-radius: 18px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.25), 0 20px 50px rgba(0,0,0,0.55);
+    backdrop-filter: blur(4px);
+  }
+  #panel .ptitle {
+    font-family: 'Pirata One', 'Courier New', cursive; color: #ff3b3b;
+    font-size: 2.2rem; text-align: center; letter-spacing: 2px; margin-bottom: 2px;
+    text-shadow: 0 0 12px rgba(180,0,0,0.8), 2px 2px 0 rgba(0,0,0,0.6);
+  }
+  #panel .psub { text-align: center; color: #d8cfa8; font-size: 0.8rem; margin-bottom: 8px; }
+  #panel .pclose {
+    position: absolute; top: 10px; right: 14px; background: none; border: none;
+    color: #d8cfa8; font-size: 1.4rem; cursor: pointer; box-shadow: none; padding: 4px 8px;
+  }
+  #panel button {
+    font-family: inherit; font-weight: bold; font-size: 1.1rem; letter-spacing: 1px;
+    padding: 18px 20px; cursor: pointer; color: #fff; border: none; border-radius: 10px;
+    background: linear-gradient(180deg, #c0392b, #8a1f1f);
+    box-shadow: inset 0 2px 0 rgba(255,255,255,0.4), 0 5px 0 #5c1414, 0 8px 12px rgba(0,0,0,0.3);
+  }
+  #panel button.green { background: linear-gradient(180deg, #27ae60, #1a7a43); box-shadow: inset 0 2px 0 rgba(255,255,255,0.4), 0 5px 0 #0f4a28, 0 8px 12px rgba(0,0,0,0.3); }
+  #panel button.dark { background: linear-gradient(180deg, #444, #111); box-shadow: inset 0 2px 0 rgba(255,255,255,0.2), 0 5px 0 #000, 0 8px 12px rgba(0,0,0,0.3); }
+  #panel button:active { transform: translateY(3px); }
+  #panel button:disabled { filter: grayscale(0.7) brightness(0.8); cursor: not-allowed; }
+
+  /* start / help overlay */
+  #overlay {
+    position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center; color: #1c1707;
+    background:
+      repeating-linear-gradient(0deg, transparent 0 38px, rgba(0,0,0,0.04) 38px 40px),
+      repeating-linear-gradient(90deg, transparent 0 38px, rgba(0,0,0,0.04) 38px 40px),
+      radial-gradient(ellipse at 50% 0%, #d4c64a, #b8a82e);
+    padding: 30px;
+  }
+  #overlay h1 { font-size: clamp(2rem, 7vw, 4rem); letter-spacing: 4px; text-shadow: 2px 2px 0 rgba(255,255,255,0.4); }
+  #overlay h1 span { color: #8a1f1f; }
+  #overlay p { max-width: 560px; margin: 14px 0; line-height: 1.6; }
+  #overlay .keys { font-size: 0.85rem; color: #4a3f1c; margin-top: 6px; }
+  #startBtn {
+    margin-top: 24px; font-family: inherit; font-weight: bold; font-size: 1.1rem; letter-spacing: 2px;
+    padding: 16px 34px; cursor: pointer; color: #fff; border: none; border-radius: 10px;
+    background: linear-gradient(180deg, #c0392b, #8a1f1f);
+    box-shadow: inset 0 2px 0 rgba(255,255,255,0.4), 0 6px 0 #5c1414, 0 10px 18px rgba(0,0,0,0.3);
+  }
+  #helpline { margin-top: 22px; font-size: 0.85rem; padding: 14px 18px; background: rgba(0,0,0,0.08); border: 1px dashed #6a5e25; border-radius: 10px; }
+  #helpline a { color: #8a1f1f; font-weight: bold; }
+  #broke { display: none; }
+  #reaper { filter: drop-shadow(0 0 18px rgba(120,0,0,0.7)); animation: float 4s ease-in-out infinite; }
+  #reaper .eye { animation: eyepulse 1.4s ease-in-out infinite; filter: drop-shadow(0 0 6px #ff0000); }
+  @keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
+  @keyframes eyepulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+  .reapertitle {
+    font-family: 'Pirata One', 'Courier New', cursive !important;
+    color: #c00000 !important; line-height: 1.05; margin-top: 6px;
+    text-shadow: 0 0 18px rgba(150,0,0,0.9), 2px 2px 0 rgba(0,0,0,0.6) !important;
+  }
+  .reapertitle span { color: #ff2a2a !important; }
+  #broke.show ~ * {}
+  body.broke #overlay {
+    background:
+      radial-gradient(ellipse at 50% 30%, #3a0606 0%, #160202 80%) !important;
+    color: #e8d9d9 !important;
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="cross"></div>
+
+<div id="hud">
+  <div class="bal" id="bal">$1,000</div>
+  <div class="net" id="net">Net: $0</div>
+  <div class="led" id="led">Walk up to a machine. Click it. Watch what happens.</div>
+</div>
+
+<div id="prompt"></div>
+<div id="result"></div>
+<div id="panel"></div>
+
+<div id="overlay">
+  <div id="intro">
+    <h1>THE HOUSE <span>ALWAYS</span> WINS</h1>
+    <p>You're standing in the backrooms. Three machines hum in the yellow light. They are all rigged with the real-world math — and they will take everything you brought.</p>
+    <p class="keys"><strong>WASD</strong> / arrows to walk &nbsp;·&nbsp; <strong>drag the mouse</strong> to look around &nbsp;·&nbsp; walk up to a machine and use the buttons</p>
+    <button id="startBtn">ENTER THE BACKROOMS</button>
+    <div id="helpline">
+      Real life isn't a demo. Free, confidential, 24/7.<br>
+      <strong>US:</strong> <a href="tel:1-800-522-4700">1-800-522-4700</a> (National Problem Gambling Helpline)<br>
+      <strong>India:</strong> <a href="tel:1800-599-0019">1800-599-0019</a> (KIRAN national mental-health helpline)
+    </div>
+  </div>
+  <div id="broke">
+    <svg id="reaper" viewBox="0 0 200 260" width="200" height="260" aria-hidden="true">
+      <!-- scythe -->
+      <line x1="150" y1="20" x2="150" y2="240" stroke="#5a4a30" stroke-width="6" stroke-linecap="round"/>
+      <path d="M150 24 Q210 30 176 78 Q160 50 150 48 Z" fill="#d8d8d8"/>
+      <!-- cloak -->
+      <path d="M100 38 C58 44 46 96 46 150 C46 210 60 248 60 248 L74 232 L86 250 L100 232 L114 250 L126 232 L140 248 C140 248 154 210 154 150 C154 96 142 44 100 38 Z" fill="#0d0d0f"/>
+      <!-- hood opening / face void -->
+      <ellipse cx="100" cy="92" rx="30" ry="38" fill="#000"/>
+      <!-- glowing eyes -->
+      <circle class="eye" cx="89" cy="92" r="6" fill="#ff1a1a"/>
+      <circle class="eye" cx="111" cy="92" r="6" fill="#ff1a1a"/>
+      <!-- bony hand on the staff -->
+      <ellipse cx="150" cy="150" rx="11" ry="14" fill="#e8e6da"/>
+    </svg>
+    <h1 class="reapertitle">HAVE YOU TRIED<br><span>GETTING A DEBT?</span></h1>
+    <p>You're at $0. But the night is young, friend. A small loan. A second card. Your car has equity. Why stop when the next spin is <em>obviously</em> the one?</p>
+    <p style="color:#9a1010;font-weight:bold;">That voice is the lie. This is exactly how it ends.</p>
+    <div id="helpline" style="display:block">
+      If this felt familiar, that's worth listening to.<br>
+      <strong>US:</strong> <a href="tel:1-800-522-4700">1-800-522-4700</a> · Chat: <a href="https://www.ncpgambling.org/chat" target="_blank" rel="noopener">ncpgambling.org/chat</a><br>
+      <strong>India:</strong> <a href="tel:1800-599-0019">1800-599-0019</a> (KIRAN, govt of India, 24/7)
+    </div>
+    <button id="restartBtn" style="margin-top:24px;font-family:inherit;font-weight:bold;font-size:1rem;letter-spacing:2px;padding:14px 28px;cursor:pointer;color:#fff;border:none;border-radius:10px;background:linear-gradient(180deg,#444,#111);box-shadow:inset 0 2px 0 rgba(255,255,255,0.2),0 6px 0 #000;">RESET (you can't do this in real life)</button>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+
+/* ============================ GAME STATE ============================ */
+const START = 1000;
+let balance = START, totalWon = 0, totalLost = 0, bets = 0;
+const fmt = (n) => "$" + Math.round(n).toLocaleString();
+
+const balEl = document.getElementById('bal');
+const netEl = document.getElementById('net');
+const ledEl = document.getElementById('led');
+const resultEl = document.getElementById('result');
+
+function hud() {
+  balEl.textContent = fmt(balance);
+  balEl.classList.toggle('low', balance < START * 0.5);
+  const net = balance - START;
+  netEl.textContent = "Net: " + (net >= 0 ? "+" : "−") + fmt(Math.abs(net));
+  if (bets >= 1) {
+    ledEl.innerHTML = `Bets: <b>${bets}</b> · Won: <b>${fmt(totalWon)}</b> · Lost: <b>${fmt(totalLost)}</b><br>House profit from you: <b style="color:#9a1010">${fmt(totalLost - totalWon)}</b>`;
+  }
+}
+let resultTimer = null;
+function showResult(msg, win) {
+  resultEl.textContent = msg;
+  resultEl.className = win ? 'win' : 'lose';
+  resultEl.style.display = 'block';
+  clearTimeout(resultTimer);
+  resultTimer = setTimeout(() => (resultEl.style.display = 'none'), 5000);
+}
+function canBet(a) {
+  if (balance < a) { showResult("Not enough balance left. Notice how fast that happened.", false); return false; }
+  return true;
+}
+function settle(stake, payout, msg) {
+  bets++;
+  balance += payout - stake;
+  if (payout >= stake) totalWon += payout - stake; else totalLost += stake - payout;
+  showResult(msg, payout >= stake);
+  hud();
+  if (balance <= 0) endBroke();
+}
+
+/* ============================ THREE SETUP ============================ */
+const app = document.getElementById('app');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.25;
+app.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xb8a82e);
+scene.fog = new THREE.Fog(0xcabd45, 30, 80);
+
+const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(0, 2.6, 6);
+
+// glossy reflections
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(renderer), 0.04).texture;
+
+/* ----- ROOM ----- */
+const ROOM = 34, H = 6;
+const wallMat = new THREE.MeshStandardMaterial({ color: 0xcdbf45, roughness: 0.55, metalness: 0.0, envMapIntensity: 0.6 });
+const trimMat = new THREE.MeshStandardMaterial({ color: 0xa89a2c, roughness: 0.4 });
+
+// floor — glossy damp carpet
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(ROOM, ROOM),
+  new THREE.MeshStandardMaterial({ color: 0x6f6320, roughness: 0.35, metalness: 0.15, envMapIntensity: 0.8 }));
+floor.rotation.x = -Math.PI / 2;
+scene.add(floor);
+
+// ceiling
+const ceil = new THREE.Mesh(new THREE.PlaneGeometry(ROOM, ROOM),
+  new THREE.MeshStandardMaterial({ color: 0xbdb040, roughness: 0.7 }));
+ceil.rotation.x = Math.PI / 2; ceil.position.y = H;
+scene.add(ceil);
+
+// walls
+function wall(w, x, z, ry) {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, H), wallMat);
+  m.position.set(x, H / 2, z); m.rotation.y = ry; scene.add(m);
+  // baseboard trim
+  const t = new THREE.Mesh(new THREE.BoxGeometry(w, 0.3, 0.1), trimMat);
+  t.position.set(x, 0.15, z + (ry === 0 ? 0.05 : 0)); t.rotation.y = ry;
+  scene.add(t);
+}
+wall(ROOM, 0, -ROOM/2, 0);
+wall(ROOM, 0, ROOM/2, Math.PI);
+wall(ROOM, -ROOM/2, 0, Math.PI/2);
+wall(ROOM, ROOM/2, 0, -Math.PI/2);
+
+// ceiling light panels (flicker)
+const lights = [];
+for (let gx = -1; gx <= 1; gx++) {
+  for (let gz = -1; gz <= 1; gz++) {
+    const panel = new THREE.Mesh(new THREE.BoxGeometry(4, 0.15, 1.4),
+      new THREE.MeshStandardMaterial({ color: 0xfff7d0, emissive: 0xfff2c0, emissiveIntensity: 2.0 }));
+    panel.position.set(gx * 9, H - 0.1, gz * 9);
+    scene.add(panel);
+    const pl = new THREE.PointLight(0xfff4cc, 55, 34, 2);
+    pl.position.set(gx * 9, H - 0.4, gz * 9);
+    scene.add(pl);
+    lights.push({ panel, pl, base: 1.0, off: Math.random() * 100 });
+  }
+}
+scene.add(new THREE.AmbientLight(0xfff3cc, 1.1));
+scene.add(new THREE.HemisphereLight(0xfff6d0, 0x6f6320, 1.0));
+
+// colors used to redden the room as the balance bleeds out
+const WARM_COL = new THREE.Color(0xfff4cc);
+const RED_COL  = new THREE.Color(0xff1500);
+const WALL_COL = new THREE.Color(0xcabd45);
+const LIGHT_COL = new THREE.Color(0xfff4cc);
+
+/* ---- BLOOD WRITING ON THE WALLS (the lies the house whispers) ---- */
+function bloodSign(text, w) {
+  const aspect = 0.30;
+  const c = document.createElement('canvas');
+  c.width = 1024; c.height = Math.round(1024 * aspect);
+  const ctx = c.getContext('2d');
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  const mat = new THREE.MeshStandardMaterial({ map: tex, transparent: true, roughness: 0.85,
+    emissive: 0x6a0000, emissiveMap: tex, emissiveIntensity: 0.55, depthWrite: false });
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, w * aspect), mat);
+
+  function draw() {
+    ctx.clearRect(0, 0, c.width, c.height);
+    // auto-fit the font to the width
+    let fs = 150;
+    do { ctx.font = `${fs}px 'Pirata One', cursive`; fs -= 4; }
+    while (ctx.measureText(text).width > c.width * 0.9 && fs > 30);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const cx = c.width / 2, cy = c.height * 0.40;
+    const grad = ctx.createLinearGradient(0, cy - fs, 0, cy + fs);
+    grad.addColorStop(0, '#b00000'); grad.addColorStop(1, '#5a0000');
+    ctx.shadowColor = 'rgba(110,0,0,0.9)'; ctx.shadowBlur = 22;
+    ctx.fillStyle = grad;
+    ctx.fillText(text, cx, cy);
+    ctx.shadowBlur = 0;
+    // drips
+    const tw = Math.min(ctx.measureText(text).width, c.width * 0.9);
+    const left = cx - tw / 2;
+    for (let i = 0; i < 14; i++) {
+      const x = left + Math.random() * tw;
+      const len = 20 + Math.random() * (c.height * 0.5);
+      const dg = ctx.createLinearGradient(0, cy, 0, cy + len);
+      dg.addColorStop(0, 'rgba(150,0,0,0.85)'); dg.addColorStop(1, 'rgba(70,0,0,0)');
+      ctx.strokeStyle = dg; ctx.lineWidth = 1 + Math.random() * 2.5;
+      ctx.beginPath(); ctx.moveTo(x, cy + fs * 0.2); ctx.lineTo(x, cy + fs * 0.2 + len); ctx.stroke();
+      ctx.fillStyle = 'rgba(120,0,0,0.7)';
+      ctx.beginPath(); ctx.arc(x, cy + fs * 0.2 + len, 1.5 + Math.random() * 2, 0, 7); ctx.fill();
+    }
+    tex.needsUpdate = true;
+  }
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(draw); else draw();
+  return mesh;
+}
+function addSign(text, x, y, z, ry, w) {
+  const s = bloodSign(text, w);
+  s.position.set(x, y, z); s.rotation.y = ry;
+  scene.add(s);
+}
+const WALL = ROOM / 2 - 0.05;
+// left wall (normal +x)
+addSign("JUST ONE MORE SPIN",        -WALL, 4.3,  -6, Math.PI/2, 9);
+addSign("YOU'RE DUE FOR A WIN",      -WALL, 2.8,   2, Math.PI/2, 9);
+addSign("CHASE IT ALL BACK",         -WALL, 3.5,  10, Math.PI/2, 7);
+// right wall (normal -x)
+addSign("YOUR LUCK IS ABOUT TO TURN", WALL, 4.3,  -4, -Math.PI/2, 11);
+addSign("DEBT IS FUTURE WINNINGS",    WALL, 2.8,   4, -Math.PI/2, 10);
+addSign("THE NEXT ONE PAYS",          WALL, 3.6,  11, -Math.PI/2, 7);
+// front wall (normal -z) — behind the player's start
+addSign("THE HOUSE BELIEVES IN YOU",   -5,  4.4, WALL, Math.PI, 11);
+addSign("WHY WORK WHEN YOU CAN WIN",     6,  3.0, WALL, Math.PI, 11);
+addSign("FORTUNE FAVOURS THE DESPERATE", 0,  2.4, WALL, Math.PI, 13);
+// back wall, high above the machines
+addSign("QUITTING IS FOR LOSERS",        0,  5.2, -WALL, 0, 11);
+
+/* ============================ MACHINES ============================ */
+// Each machine: a cabinet group + a canvas-textured screen we draw to.
+function makeScreen(w, h) {
+  const c = document.createElement('canvas');
+  c.width = 512; c.height = Math.round(512 * h / w);
+  const ctx = c.getContext('2d');
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h),
+    new THREE.MeshStandardMaterial({ map: tex, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.55, roughness: 0.25 }));
+  return { c, ctx, tex, mesh };
+}
+
+function makeCabinet(color) {
+  const g = new THREE.Group();
+  const bodyMat = new THREE.MeshStandardMaterial({ color, roughness: 0.16, metalness: 0.4, envMapIntensity: 1.2 });
+  const darkMat = new THREE.MeshStandardMaterial({ color: 0x141414, roughness: 0.25, metalness: 0.7 });
+
+  // rounded base
+  const base = new THREE.Mesh(new RoundedBoxGeometry(2.3, 0.4, 1.7, 4, 0.18),
+    new THREE.MeshStandardMaterial({ color: 0x111, roughness: 0.4 }));
+  base.position.y = 0.2; g.add(base);
+  // rounded pedestal body (the click target)
+  const body = new THREE.Mesh(new RoundedBoxGeometry(2.2, 1.2, 1.6, 6, 0.3), bodyMat);
+  body.position.y = 1.0; g.add(body);
+  // rounded screen tower
+  const tower = new THREE.Mesh(new RoundedBoxGeometry(2.1, 1.85, 0.55, 6, 0.28), bodyMat);
+  tower.position.set(0, 2.55, -0.35); g.add(tower);
+  // rounded screen bezel
+  const bezel = new THREE.Mesh(new RoundedBoxGeometry(1.75, 1.32, 0.14, 5, 0.12), darkMat);
+  bezel.position.set(0, 2.55, -0.16); g.add(bezel);
+
+  return { g, body, button: null, btnY: 0 };
+}
+
+const machines = {};
+function addMachine(key, color, label, x, z, ry, buttons) {
+  const cab = makeCabinet(color);
+  cab.g.position.set(x, 0, z);
+  cab.g.rotation.y = ry;
+  scene.add(cab.g);
+
+  const screen = makeScreen(1.6, 1.18);
+  screen.mesh.position.set(0, 2.6, -0.04);
+  cab.g.add(screen.mesh);
+
+  // marquee text on the tower
+  const lbl = makeScreen(1.7, 0.4);
+  lbl.mesh.position.set(0, 1.0, 0.81);
+  cab.g.add(lbl.mesh);
+  lbl.ctx.fillStyle = '#111'; lbl.ctx.fillRect(0,0,lbl.c.width,lbl.c.height);
+  lbl.ctx.fillStyle = '#ffd23f'; lbl.ctx.font = 'bold 60px "Courier New", monospace';
+  lbl.ctx.textAlign = 'center'; lbl.ctx.textBaseline = 'middle';
+  lbl.ctx.fillText(label, lbl.c.width/2, lbl.c.height/2);
+  lbl.tex.needsUpdate = true;
+
+  // collider center for proximity prompt
+  const m = { key, cab, screen, label, buttons, pos: new THREE.Vector3(x, 1.5, z), busy: false,
+    button: cab.button, btnY: cab.btnY };
+  machines[key] = m;
+  cab.body.userData.machine = key;
+  return m;
+}
+
+// depress the big dome button briefly
+function pressButton(m) {
+  if (!m || !m.button) return;
+  m.button.position.y = m.btnY - 0.1;
+  setTimeout(() => { if (m.button) m.button.position.y = m.btnY; }, 130);
+}
+
+/* draw helpers ----------------------------------------------------- */
+function clearScreen(ctx, c, bg = '#0c0c0c') {
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, c.width, c.height);
+}
+function drawSlots(m, symbols, msg) {
+  const { ctx, c, tex } = m.screen;
+  clearScreen(ctx, c, '#101012');
+  const bw = 130, gap = 16, total = bw * 3 + gap * 2, x0 = (c.width - total) / 2, y = 70;
+  for (let i = 0; i < 3; i++) {
+    const x = x0 + i * (bw + gap);
+    ctx.fillStyle = '#f4f4f4'; roundRect(ctx, x, y, bw, 150, 14); ctx.fill();
+    ctx.fillStyle = '#000'; ctx.font = '96px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(symbols[i], x + bw/2, y + 78);
+  }
+  ctx.fillStyle = '#ffd23f'; ctx.font = 'bold 30px "Courier New", monospace'; ctx.textAlign = 'center';
+  wrapText(ctx, msg, c.width/2, 300, c.width - 40, 34);
+  tex.needsUpdate = true;
+}
+function drawRoulette(m, msg, color) {
+  const { ctx, c, tex } = m.screen;
+  clearScreen(ctx, c, '#101012');
+  ctx.fillStyle = color || '#ffd23f'; ctx.font = 'bold 90px "Courier New", monospace';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(msg.big, c.width/2, 110);
+  ctx.fillStyle = '#ffd23f'; ctx.font = 'bold 28px "Courier New", monospace';
+  wrapText(ctx, msg.sub, c.width/2, 240, c.width - 40, 34);
+  tex.needsUpdate = true;
+}
+function drawCrash(m, text, crashed) {
+  const { ctx, c, tex } = m.screen;
+  clearScreen(ctx, c, '#101012');
+  ctx.fillStyle = crashed ? '#ff4040' : '#2dff7a'; ctx.font = 'bold 110px "Courier New", monospace';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(text.big, c.width/2, 130);
+  ctx.fillStyle = '#ffd23f'; ctx.font = 'bold 26px "Courier New", monospace';
+  wrapText(ctx, text.sub, c.width/2, 280, c.width - 40, 32);
+  tex.needsUpdate = true;
+}
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
+}
+function wrapText(ctx, text, x, y, maxW, lh) {
+  const words = String(text).split(' '); let line = '', yy = y;
+  for (const w of words) {
+    const test = line + w + ' ';
+    if (ctx.measureText(test).width > maxW && line) { ctx.fillText(line.trim(), x, yy); line = w + ' '; yy += lh; }
+    else line = test;
+  }
+  ctx.fillText(line.trim(), x, yy);
+}
+
+/* ============================ MACHINE LOGIC ============================ */
+// --- SLOTS (~92% RTP, with the near-miss hook) ---
+const SYMBOLS = ["🍒","🔔","💎","🍋","⭐","7️⃣","🍇","🪙"];
+const PAYOUTS = { "🍒":3,"🔔":5,"💎":12,"🍋":3,"⭐":8,"7️⃣":20,"🍇":4,"🪙":6 };
+function playSlots(stake) {
+  const m = machines.slots;
+  if (m.busy || !canBet(stake)) return;
+  pressButton(m);
+  m.busy = true;
+  const final = [0,1,2].map(() => SYMBOLS[Math.floor(Math.random()*SYMBOLS.length)]);
+  let ticks = 0;
+  const iv = setInterval(() => {
+    const rnd = [0,1,2].map(() => SYMBOLS[Math.floor(Math.random()*SYMBOLS.length)]);
+    drawSlots(m, rnd, "SPINNING...");
+    if (++ticks > 14) {
+      clearInterval(iv); m.busy = false;
+      let payout = 0, msg;
+      if (final[0]===final[1] && final[1]===final[2]) {
+        payout = stake * PAYOUTS[final[0]];
+        msg = `THREE ${final[0]}! +${fmt(payout)}. That rush is the hook.`;
+      } else if (final[0]===final[1]||final[1]===final[2]||final[0]===final[2]) {
+        payout = Math.floor(stake*0.5);
+        msg = `So close! ${fmt(payout)} back. "Almost" keeps you playing.`;
+      } else { payout = 0; msg = `Nothing. −${fmt(stake)}.`; }
+      drawSlots(m, final, msg);
+      settle(stake, payout, "SLOTS: " + msg);
+    }
+  }, 70);
+}
+
+// --- ROULETTE (American: 18R/18B/2 green → 47.4% on even-money) ---
+let rouletteWheel; // 3D disc mesh
+function playRoulette(stake, pick) {
+  const m = machines.roulette;
+  if (m.busy || !canBet(stake)) return;
+  pressButton(m);
+  m.busy = true;
+  drawRoulette(m, { big: "…", sub: "No more bets." });
+  const slot = Math.floor(Math.random() * 38);
+  const color = slot < 18 ? "red" : slot < 36 ? "black" : "green";
+  // spin the 3D wheel to land on the slot
+  const spins = 6 * Math.PI * 2;
+  const targetRot = spins + (slot / 38) * Math.PI * 2;
+  const startRot = rouletteWheel.rotation.y;
+  const dur = 3500, t0 = performance.now();
+  (function anim() {
+    const k = Math.min(1, (performance.now() - t0) / dur);
+    const e = 1 - Math.pow(1 - k, 3);
+    rouletteWheel.rotation.y = startRot + (targetRot - startRot) * e;
+    if (k < 1) requestAnimationFrame(anim);
+    else {
+      m.busy = false;
+      let payout = 0, msg, big, sub, col;
+      if (color === "green") { big = "0"; col = "#2dff7a"; sub = `GREEN. Everyone loses. −${fmt(stake)}.`; msg = `ROULETTE: green zero — the whole business model. −${fmt(stake)}.`; }
+      else if (color === pick) { payout = stake*2; big = color==="red"?"RED":"BLK"; col = color==="red"?"#ff5a5a":"#cfcfcf"; sub = `+${fmt(stake)} — but odds were 47.4%, not 50%.`; msg = `ROULETTE: ${color} hit. +${fmt(stake)}.`; }
+      else { big = color==="red"?"RED":"BLK"; col = color==="red"?"#ff5a5a":"#cfcfcf"; sub = `You picked ${pick}. −${fmt(stake)}.`; msg = `ROULETTE: ${color}, you said ${pick}. −${fmt(stake)}.`; }
+      drawRoulette(m, { big, sub }, col);
+      settle(stake, payout, msg);
+    }
+  })();
+}
+
+// --- CRASH (multiplier; house keeps ~5%) ---
+let crashState = null;
+function startCrash(stake) {
+  const m = machines.crash;
+  if (m.busy || !canBet(stake)) return;
+  pressButton(m);
+  m.busy = true;
+  const point = Math.random() < 0.04 ? 1.0 : 0.96 / Math.random();
+  crashState = { m, stake, multi: 1, point, iv: null };
+  setCrashButtons(true);
+  crashState.iv = setInterval(() => {
+    crashState.multi = +(crashState.multi * 1.03).toFixed(2);
+    if (crashState.multi >= point) {
+      clearInterval(crashState.iv); m.busy = false;
+      drawCrash(m, { big: "CRASH", sub: `Crashed at ${point.toFixed(2)}x. −${fmt(stake)}.` }, true);
+      settle(stake, 0, `CRASH: busted at ${point.toFixed(2)}x. Greed is the product. −${fmt(stake)}.`);
+      crashState = null; setCrashButtons(false);
+    } else {
+      drawCrash(m, { big: crashState.multi.toFixed(2) + "x", sub: "Cash out... or get greedy." }, false);
+    }
+  }, 110);
+}
+function cashOut() {
+  if (!crashState) return;
+  const { m, stake, multi, iv } = crashState;
+  pressButton(m);
+  clearInterval(iv); m.busy = false;
+  const payout = Math.floor(stake * multi);
+  drawCrash(m, { big: multi.toFixed(2) + "x", sub: `Cashed out! +${fmt(payout - stake)}.` }, false);
+  settle(stake, payout, `CRASH: out at ${multi.toFixed(2)}x. Now do that every time. +${fmt(payout)}.`);
+  crashState = null; setCrashButtons(false);
+}
+
+/* ============================ BUILD MACHINES ============================ */
+const WALLZ = -ROOM/2 + 1.6;
+addMachine('roulette', 0x1f6f43, 'ROULETTE', -7.5, WALLZ, 0, [
+  { t: 'RED $10', fn: () => playRoulette(10, 'red') },
+  { t: 'BLACK $10', fn: () => playRoulette(10, 'black'), cls: 'dark' },
+]);
+addMachine('slots', 0xc0392b, 'SLOTS', 0, WALLZ, 0, [
+  { t: 'SPIN $10', fn: () => playSlots(10) },
+  { t: 'SPIN $50', fn: () => playSlots(50) },
+]);
+addMachine('crash', 0x6a2fb0, 'THE CRASH', 7.5, WALLZ, 0, [
+  { t: 'BET $10 & FLY', fn: () => startCrash(10), id: 'crashStart' },
+  { t: 'CASH OUT', fn: cashOut, cls: 'green', id: 'crashCash', disabled: true },
+]);
+
+// initial screen text
+drawSlots(machines.slots, ["🍒","🔔","💎"], "95% advertised. 92% real. Click to spin.");
+drawRoulette(machines.roulette, { big: "RB0", sub: "Two green zeros. Click RED or BLACK." });
+drawCrash(machines.crash, { big: "1.00x", sub: "It always crashes eventually." }, false);
+
+// 3D roulette wheel on top of the roulette cabinet
+{
+  const cab = machines.roulette.cab.g;
+  const wc = document.createElement('canvas'); wc.width = wc.height = 256;
+  const wx = wc.getContext('2d');
+  for (let i = 0; i < 38; i++) {
+    wx.beginPath(); wx.moveTo(128,128);
+    wx.arc(128,128,128, (i/38)*2*Math.PI, ((i+1)/38)*2*Math.PI);
+    wx.fillStyle = i < 18 ? '#8a1f1f' : i < 36 ? '#151515' : '#1a7a43'; wx.fill();
+  }
+  wx.fillStyle = '#c9a227'; wx.beginPath(); wx.arc(128,128,30,0,7); wx.fill();
+  const wtex = new THREE.CanvasTexture(wc); wtex.colorSpace = THREE.SRGBColorSpace;
+  rouletteWheel = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 0.12, 48),
+    [new THREE.MeshStandardMaterial({ color: 0x222, roughness: 0.3, metalness: 0.6 }),
+     new THREE.MeshStandardMaterial({ map: wtex, roughness: 0.25, metalness: 0.3 }),
+     new THREE.MeshStandardMaterial({ color: 0x222, roughness: 0.3 })]);
+  rouletteWheel.position.set(0, 3.55, -0.42);
+  cab.add(rouletteWheel);
+  const ptr = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.25, 4),
+    new THREE.MeshStandardMaterial({ color: 0xffd23f, emissive: 0xffd23f, emissiveIntensity: 0.4 }));
+  ptr.position.set(0, 3.8, 0.18); ptr.rotation.x = Math.PI;
+  cab.add(ptr);
+}
+
+/* ============================ CONTROLS / MOVEMENT ============================ */
+// Drag-to-look (no pointer lock — works inside sandboxed iframes). Cursor stays
+// visible so the HTML buttons are always clickable.
+let yaw = 0, pitch = 0, started = false;
+camera.rotation.order = 'YXZ';
+
+const keys = {};
+addEventListener('keydown', (e) => keys[e.code] = true);
+addEventListener('keyup', (e) => keys[e.code] = false);
+
+let dragging = false, lastX = 0, lastY = 0;
+const dom = renderer.domElement;
+dom.addEventListener('pointerdown', (e) => { dragging = true; lastX = e.clientX; lastY = e.clientY; });
+addEventListener('pointerup', () => { dragging = false; });
+addEventListener('pointermove', (e) => {
+  if (!dragging || !started) return;
+  yaw -= (e.clientX - lastX) * 0.0028;
+  pitch -= (e.clientY - lastY) * 0.0028;
+  pitch = Math.max(-1.2, Math.min(1.2, pitch));
+  lastX = e.clientX; lastY = e.clientY;
+});
+
+const velocity = new THREE.Vector3();
+const HALF = ROOM/2 - 1;
+
+// raycaster for clicking machines
+const ray = new THREE.Raycaster();
+const center = new THREE.Vector2(0, 0);
+let focused = null;
+
+const SUBS = {
+  slots: 'Advertised 95% · Real 92% · the difference is the trap',
+  roulette: 'Two green zeros. Your "50/50" is really 47.4%',
+  crash: 'Cash out in time… you almost never will',
+};
+function setPanel(m) {
+  const panel = document.getElementById('panel');
+  if (!m) { panel.style.display = 'none'; panel.innerHTML = ''; return; }
+  panel.style.display = 'flex';
+  panel.innerHTML = '';
+
+  const title = document.createElement('div');
+  title.className = 'ptitle'; title.textContent = m.label;
+  panel.appendChild(title);
+  const sub = document.createElement('div');
+  sub.className = 'psub'; sub.textContent = SUBS[m.key] || '';
+  panel.appendChild(sub);
+
+  m.buttons.forEach((b) => {
+    const btn = document.createElement('button');
+    btn.textContent = b.t;
+    if (b.cls) btn.className = b.cls;
+    if (b.id) btn.id = b.id;
+    if (b.disabled) btn.disabled = true;
+    btn.addEventListener('click', (e) => { e.stopPropagation(); b.fn(); });
+    panel.appendChild(btn);
+  });
+}
+function setCrashButtons(flying) {
+  const s = document.getElementById('crashStart'); const c = document.getElementById('crashCash');
+  if (s) s.disabled = flying; if (c) c.disabled = !flying;
+}
+
+// proximity + look detection
+const promptEl = document.getElementById('prompt');
+function updateFocus() {
+  if (!started) return;
+  ray.setFromCamera(center, camera);
+  const bodies = Object.values(machines).map(m => m.cab.body);
+  const hits = ray.intersectObjects(bodies, false);
+  let near = null;
+  if (hits.length && hits[0].distance < 6) near = machines[hits[0].object.userData.machine];
+  // also require proximity
+  if (near && camera.position.distanceTo(near.pos) > 7) near = null;
+
+  if (near !== focused) {
+    focused = near;
+    setPanel(focused);
+    if (focused) { promptEl.textContent = `▶ ${focused.label} — use the buttons below`; promptEl.style.display = 'block'; }
+    else promptEl.style.display = 'none';
+  }
+}
+
+/* ============================ START / END ============================ */
+const overlay = document.getElementById('overlay');
+function enter() {
+  started = true;
+  overlay.style.display = 'none';
+  document.getElementById('hud').style.display = 'block';
+  document.getElementById('cross').style.display = 'block';
+}
+document.getElementById('startBtn').addEventListener('click', enter);
+
+function endBroke() {
+  started = false;
+  document.getElementById('hud').style.display = 'none';
+  document.getElementById('cross').style.display = 'none';
+  document.getElementById('panel').style.display = 'none';
+  document.getElementById('prompt').style.display = 'none';
+  document.getElementById('intro').style.display = 'none';
+  document.getElementById('broke').style.display = 'block';
+  document.body.classList.add('broke');
+  overlay.style.display = 'flex';
+}
+document.getElementById('restartBtn').addEventListener('click', () => {
+  balance = START; totalWon = totalLost = bets = 0; hud();
+  document.body.classList.remove('broke');
+  document.getElementById('broke').style.display = 'none';
+  document.getElementById('intro').style.display = 'block';
+  drawCrash(machines.crash, { big: "1.00x", sub: "It always crashes eventually." }, false);
+  enter();
+});
+
+// keyboard shortcuts for the focused machine (optional convenience)
+addEventListener('keydown', (e) => {
+  if (!focused) return;
+  if (e.code === 'Digit1' && focused.buttons[0] && !focused.buttons[0].disabled) focused.buttons[0].fn();
+  if (e.code === 'Digit2' && focused.buttons[1]) focused.buttons[1].fn();
+  if (e.code === 'Space' && focused.key === 'crash' && crashState) { e.preventDefault(); cashOut(); }
+});
+
+hud();
+
+/* ============================ LOOP ============================ */
+let prev = performance.now();
+function loop() {
+  requestAnimationFrame(loop);
+  const now = performance.now(), dt = Math.min(0.05, (now - prev) / 1000); prev = now;
+
+  // look + movement
+  if (started) {
+    camera.rotation.y = yaw;
+    camera.rotation.x = pitch;
+    const speed = 7;
+    const f = (keys['KeyW']||keys['ArrowUp']?1:0) - (keys['KeyS']||keys['ArrowDown']?1:0);
+    const s = (keys['KeyD']||keys['ArrowRight']?1:0) - (keys['KeyA']||keys['ArrowLeft']?1:0);
+    const p = camera.position;
+    if (f || s) {
+      const sinY = Math.sin(yaw), cosY = Math.cos(yaw);
+      // forward (into screen) is -z rotated by yaw
+      p.x += (-sinY * f + cosY * s) * speed * dt;
+      p.z += (-cosY * f - sinY * s) * speed * dt;
+    }
+    p.x = Math.max(-HALF, Math.min(HALF, p.x));
+    p.z = Math.max(-HALF, Math.min(HALF, p.z));
+    p.y = 2.6;
+  }
+
+  // light flicker + reddening as the balance bleeds toward zero
+  const danger = Math.max(0, Math.min(1, (START * 0.6 - balance) / (START * 0.6)));
+  LIGHT_COL.copy(WARM_COL).lerp(RED_COL, danger);
+  scene.fog.color.copy(WALL_COL).lerp(RED_COL, danger * 0.7);
+  for (const L of lights) {
+    const n = Math.sin(now*0.004 + L.off) * Math.sin(now*0.013 + L.off*2);
+    // the closer to broke, the more violent the flicker
+    const flick = Math.random() < (0.003 + danger * 0.06) ? (0.35 + Math.random()*0.3) : 1;
+    const v = (0.92 + n*0.07) * flick;
+    L.pl.intensity = 55 * v * (1 - danger * 0.35);
+    L.pl.color.copy(LIGHT_COL);
+    L.panel.material.emissiveIntensity = 2.0 * v;
+    L.panel.material.emissive.copy(LIGHT_COL);
+  }
+
+  updateFocus();
+  renderer.render(scene, camera);
+}
+loop();
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>
